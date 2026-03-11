@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpt-oss-20b"
+version = "0.1.0"
+description = "GPT-OSS-style 20B training stack scaffold"
+requires-python = ">=3.10"
+dependencies = [
+  "torch>=2.2",
+  "pyyaml>=6.0",
+  "numpy>=1.26",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
