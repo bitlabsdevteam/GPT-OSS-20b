@@ -2,12 +2,15 @@ import argparse
 import os
 import torch
 import torch.nn.functional as F
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from .config import load_config
 from .dist import init_distributed, is_rank0
 from .model import GPTModel, ModelConfig
 from .parallel import infer_parallel_from_env, validate_parallel
 from .profiler import timed_section, collect_step_stats
+from .checkpoint import save_checkpoint
 
 
 def _autocast_dtype(enabled_bf16: bool):
@@ -40,6 +43,8 @@ def main() -> None:
         ffn_mult=int(cfg["model"]["ffn_mult"]),
     )
     model = GPTModel(mcfg).to(device)
+    if dist.is_available() and dist.is_initialized():
+        model = DDP(model, device_ids=[local_rank] if device.startswith("cuda") else None)
     optim = torch.optim.AdamW(model.parameters(), lr=float(cfg["train"]["lr"]))
 
     bsz = int(cfg["train"]["micro_batch_size"])
@@ -47,6 +52,7 @@ def main() -> None:
     vocab = int(cfg["model"]["vocab_size"])
     max_steps = int(cfg["train"]["max_steps"])
     log_every = int(cfg["logging"]["log_every"])
+    ckpt_every = int(cfg["logging"].get("ckpt_every", 200))
     use_bf16 = bool(cfg["train"].get("bf16", True))
 
     for step in range(1, max_steps + 1):
@@ -74,6 +80,10 @@ def main() -> None:
                 f"tok/s={stats.tokens_per_s:.1f} max_mem={stats.max_mem_gb:.2f}GB",
                 flush=True,
             )
+
+        if step % ckpt_every == 0 and is_rank0():
+            module = model.module if hasattr(model, "module") else model
+            save_checkpoint(f"checkpoints/step_{step:07d}.pt", module, optim, step)
 
 
 if __name__ == "__main__":
