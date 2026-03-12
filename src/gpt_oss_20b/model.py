@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 
 
 @dataclass
@@ -13,6 +14,7 @@ class ModelConfig:
     ffn_mult: int
     max_seq_len: int = 1024
     dropout: float = 0.1
+    activation_checkpointing: bool = False
 
 
 class TransformerBlock(nn.Module):
@@ -49,6 +51,11 @@ class GPTModel(nn.Module):
     def _causal_mask(self, seq_len: int, device: torch.device) -> torch.Tensor:
         return torch.triu(torch.full((seq_len, seq_len), float("-inf"), device=device), diagonal=1)
 
+    def _run_block(self, block: TransformerBlock, h: torch.Tensor, attn_mask: torch.Tensor) -> torch.Tensor:
+        if self.cfg.activation_checkpointing and self.training:
+            return checkpoint(block, h, attn_mask, use_reentrant=False)
+        return block(h, attn_mask)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         batch_size, seq_len = x.shape
         if seq_len > self.cfg.max_seq_len:
@@ -58,7 +65,7 @@ class GPTModel(nn.Module):
         h = self.embed(x) + self.pos_embed(pos)
         attn_mask = self._causal_mask(seq_len, x.device)
         for blk in self.blocks:
-            h = blk(h, attn_mask)
+            h = self._run_block(blk, h, attn_mask)
         h = self.ln_f(h)
         return self.head(h)
 

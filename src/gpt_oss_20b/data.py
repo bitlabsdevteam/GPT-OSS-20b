@@ -24,6 +24,34 @@ class NextTokenDataset(Dataset):
         return x, y
 
 
+class SyntheticTokenDataGenerator:
+    """Deterministic synthetic token batches for perf and smoke testing."""
+
+    def __init__(self, vocab_size: int, seq_len: int, batch_size: int, seed: int):
+        self.vocab_size = vocab_size
+        self.seq_len = seq_len
+        self.batch_size = batch_size
+        self.generator = torch.Generator(device="cpu")
+        self.generator.manual_seed(seed)
+
+    def next_batch(self, device: str):
+        x = torch.randint(
+            0,
+            self.vocab_size,
+            (self.batch_size, self.seq_len),
+            generator=self.generator,
+            dtype=torch.long,
+        )
+        y = torch.randint(
+            0,
+            self.vocab_size,
+            (self.batch_size, self.seq_len),
+            generator=self.generator,
+            dtype=torch.long,
+        )
+        return x.to(device), y.to(device)
+
+
 def load_text(path: str) -> str:
     return Path(path).read_text(encoding="utf-8")
 
